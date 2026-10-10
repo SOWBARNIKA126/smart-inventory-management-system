@@ -1,0 +1,45 @@
+"use client";
+import { useI18n } from '@/components/language-provider';
+import Link from "next/link";
+import { useState } from "react";
+import { ArrowLeft, ArrowUpRight, History, Pencil, Sparkles } from "lucide-react";
+import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from "recharts";
+import { useSession } from "@/components/session-provider";
+import type { ForecastResult } from "@/services/forecasting";
+import { DataState, Product, ProductAvatar, Status, stockStatus, useResource } from "./shared";
+import { ProductEditor } from "./product-editor";
+interface Detail extends Product {
+    salesSummary: {
+        unitsSoldThisMonth: number;
+        revenueThisMonth: number;
+        averageDailySales: number;
+        previousMonthRevenue: number;
+        previousMonthComparison: number | null;
+    };
+    salesHistory: {
+        date: string;
+        quantity: number;
+        revenue: number;
+    }[];
+}
+export default function ProductDetail({ id }: {
+    id: string;
+}) {
+    const { t, formatLocale, currency, date, number } = useI18n();
+    const shortDate = (value: string) => new Date(value).toLocaleDateString(formatLocale, { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
+    const { user } = useSession();
+    const manage = user?.role === "ADMIN" || user?.role === "MANAGER";
+    const [historyDays, setHistoryDays] = useState(30);
+    const [forecastDays, setForecastDays] = useState(30);
+    const [edit, setEdit] = useState(false);
+    const detail = useResource<Detail>(`/api/products/${id}?days=${historyDays}`);
+    const forecast = useResource<ForecastResult>(manage ? `/api/forecasting?productId=${id}&days=${forecastDays}` : null);
+    const product = detail.data;
+    const forecastChart = forecast.data ? [...forecast.data.history.slice(-30).map(point => ({ date: point.date, actual: point.quantity, forecast: null as number | null })), ...forecast.data.forecast.map(point => ({ date: point.date, actual: null as number | null, forecast: point.quantity }))] : [];
+    return <><Link href="/products" className="operations-back"><ArrowLeft size={15}/>{t("All products")}</Link><DataState loading={detail.loading} error={detail.error} onRetry={detail.refresh}>{product && <><div className="page-heading"><div className="operations-product-cell"><ProductAvatar name={product.name} category={product.category?.name}/><div><div className="operations-inline"><h1 className="page-title">{product.name}</h1><Status value={product.status}/></div><p className="page-subtitle">{product.sku} <span style={{ margin: "0 8px" }}>·</span>{product.category?.name}</p></div></div><div className="operations-inline"><Link className="button button-secondary" href={`/inventory/movements?productId=${id}`}><History size={16}/>{t("Stock history")}</Link>{manage && <button className="button button-primary" onClick={() => setEdit(true)}><Pencil size={16}/>{t("Edit product")}</button>}</div></div>
+    <div className="operations-metric-row"><div className="card"><p className="operations-stat-label">{t("Current stock")}</p><p className="operations-stat-value">{number(product.inventory?.currentStock)} <span style={{ fontSize: 13, fontWeight: 400 }} className="muted">{product.unit}</span></p><div style={{ marginTop: 12 }}><Status value={stockStatus(product)}/></div></div><div className="card"><p className="operations-stat-label">{t("Inventory value")}</p><p className="operations-stat-value">{currency((product.inventory?.currentStock ?? 0) * Number(product.costPrice))}</p><p className="operations-form-help">{t("Based on cost price")}</p></div><div className="card"><p className="operations-stat-label">{t("Units sold this month")}</p><p className="operations-stat-value">{number(product.salesSummary.unitsSoldThisMonth)}</p><p className="operations-form-help">{number(product.salesSummary.averageDailySales)}{t(" units per day")}</p></div><div className="card"><p className="operations-stat-label">{t("Revenue this month")}</p><p className="operations-stat-value">{currency(product.salesSummary.revenueThisMonth)}</p><p className="operations-form-help">{product.salesSummary.previousMonthComparison == null ? t("No previous month comparison") : t("{0}{1}% vs last month", [product.salesSummary.previousMonthComparison >= 0 ? "+" : "", number(product.salesSummary.previousMonthComparison)])}</p></div></div>
+    <div className="card operations-detail-card"><h3 className="operations-form-section-title">{t("Product information")}</h3>{product.description && <p className="muted" style={{ fontSize: 13, marginBottom: 25, lineHeight: 1.8 }}>{product.description}</p>}<dl className="operations-detail-grid">{[["Cost price", currency(product.costPrice)], ["Selling price", currency(product.sellingPrice)], ["GST rate", `${Number(product.gstPercentage)}%`], ["HSN / SAC code", product.hsnCode || "—"], ["Barcode", product.barcode || "—"], ["Supplier", product.supplier ? <Link key="supplier" href={`/suppliers/${product.supplierId}`} className="operations-link">{product.supplier.name}</Link> : "—"], ["Minimum stock", `${product.minStock} ${product.unit}`], ["Reorder point", `${product.reorderPoint} ${product.unit}`], ["Reorder quantity", `${product.reorderQuantity} ${product.unit}`], ["Reserved stock", `${product.inventory?.reservedStock ?? 0} ${product.unit}`], ["Created", date(product.createdAt)], ["Last updated", date(product.updatedAt)]].map(([label, value]) => <div key={String(label)}><dt>{t(String(label))}</dt><dd>{value}</dd></div>)}</dl></div>
+    <div className="card operations-detail-card operations-section"><div className="operations-chart-heading"><div><h3>{t("Sales history")}</h3><p className="operations-form-help">{t("Daily units sold, from recorded sales")}</p></div><div className="operations-inline">{[[30, "30 days"], [90, "90 days"], [180, "6 months"], [365, "1 year"]].map(([days, label]) => <button className="operations-range" key={days} data-active={historyDays === days} onClick={() => setHistoryDays(Number(days))}>{t(label)}</button>)}</div></div><div className="operations-chart"><ResponsiveContainer width="100%" height="100%"><AreaChart data={product.salesHistory}><defs><linearGradient id="product-sales-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#55aa92" stopOpacity={0.17}/><stop offset="100%" stopColor="#55aa92" stopOpacity={0}/></linearGradient></defs><CartesianGrid vertical={false} stroke="#edf1f2" strokeDasharray="3 3"/><XAxis dataKey="date" tickFormatter={shortDate} minTickGap={35} tick={{ fontSize: 11, fill: "#8b96a0" }} axisLine={false} tickLine={false}/><YAxis tick={{ fontSize: 11, fill: "#8b96a0" }} axisLine={false} tickLine={false} width={35}/><Tooltip labelFormatter={value => shortDate(String(value))}/><Area type="monotone" name={t("Units sold")} dataKey="quantity" stroke="#299677" strokeWidth={2} fill="url(#product-sales-fill)"/></AreaChart></ResponsiveContainer></div></div>
+    {manage && <div className="card operations-detail-card operations-section"><div className="operations-chart-heading"><div><h3 className="operations-inline"><Sparkles size={17} color="#4c78c0"/>{t("Demand forecast")}</h3><p className="operations-form-help">{t("Historical demand and predicted daily units")}</p></div><div className="operations-inline">{[7, 30, 90].map(days => <button className="operations-range" key={days} data-active={forecastDays === days} onClick={() => setForecastDays(days)}>{days}{t(" days")}</button>)}</div></div><DataState loading={forecast.loading} error={forecast.error} onRetry={forecast.refresh}>{forecast.data && <><div className="operations-chart"><ResponsiveContainer width="100%" height="100%"><LineChart data={forecastChart}><CartesianGrid vertical={false} stroke="#edf1f2" strokeDasharray="3 3"/><XAxis dataKey="date" tickFormatter={shortDate} minTickGap={35} tick={{ fontSize: 11 }} axisLine={false} tickLine={false}/><YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} width={35}/><Tooltip labelFormatter={value => shortDate(String(value))}/><Legend iconType="plainline" wrapperStyle={{ fontSize: 12 }}/><Line type="monotone" name={t("Actual sales")} dataKey="actual" stroke="#7b91ac" dot={false} strokeWidth={2}/><Line type="monotone" name={t("Forecast sales")} dataKey="forecast" stroke="#416fcd" strokeDasharray="5 4" dot={false} strokeWidth={2}/></LineChart></ResponsiveContainer></div><div className="operations-note operations-inline"><span>{t("Expected demand: ")}<strong>{number(forecast.data.expectedDemand)}{t(" units")}</strong> · {t(forecast.data.confidence.toLowerCase())}{t(" confidence \u00B7 Recommended reorder: ")}<strong>{number(forecast.data.recommendedReorder)}{t(" units")}</strong></span><Link href={`/forecasting?productId=${id}`} className="operations-link operations-inline" style={{ marginLeft: "auto" }}>{t("Full forecast")}<ArrowUpRight size={15}/></Link></div></>}</DataState></div>}
+    <ProductEditor open={edit} product={product} onOpenChange={setEdit} onSaved={detail.refresh}/></>}</DataState></>;
+}

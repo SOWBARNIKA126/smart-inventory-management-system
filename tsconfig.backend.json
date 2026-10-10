@@ -1,0 +1,1 @@
+{"extends":"./tsconfig.json","compilerOptions":{"incremental":false},"include":["src/lib/auth.ts","src/lib/db.ts","src/lib/errors.ts","src/lib/permissions.ts","src/lib/validation.ts","src/services/**/*.ts","src/app/api/**/*.ts","prisma/seed.ts","tests/backend.test.ts"]}

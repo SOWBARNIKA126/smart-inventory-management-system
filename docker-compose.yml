@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: inventory
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-inventory_dev}
+      POSTGRES_DB: smart_inventory
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - inventory_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inventory -d smart_inventory"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  inventory_data:

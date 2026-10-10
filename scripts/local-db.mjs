@@ -1,0 +1,17 @@
+import EmbeddedPostgres from 'embedded-postgres';
+import {existsSync, mkdirSync} from 'node:fs';
+import path from 'node:path';
+const dataDir=path.resolve('.local/postgres');
+mkdirSync(path.resolve('.local'),{recursive:true});
+const database=new EmbeddedPostgres({databaseDir:dataDir,user:'inventory',password:'inventory_dev',port:5432,persistent:true,authMethod:'scram-sha-256',postgresFlags:['-h','127.0.0.1'],onLog:()=>{},onError:message=>{if(String(message).includes('FATAL'))console.error(message)}});
+if(!existsSync(path.join(dataDir,'PG_VERSION')))await database.initialise();
+await database.start();
+const client=database.getPgClient();
+await client.connect();
+const result=await client.query("SELECT 1 FROM pg_database WHERE datname = 'smart_inventory'");
+await client.end();
+if(!result.rows.length)await database.createDatabase('smart_inventory');
+console.log('PostgreSQL ready on 127.0.0.1:5432; database smart_inventory. Data persists in .local/postgres.');
+const stop=async()=>{await database.stop();process.exit(0)};
+process.on('SIGINT',stop);process.on('SIGTERM',stop);
+setInterval(()=>{},60000);

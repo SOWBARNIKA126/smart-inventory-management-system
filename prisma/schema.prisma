@@ -1,0 +1,344 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  STAFF
+}
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+  DISCONTINUED
+}
+enum SupplierStatus {
+  ACTIVE
+  INACTIVE
+}
+enum MovementType {
+  PURCHASE
+  SALE
+  RETURN
+  ADJUSTMENT
+  DAMAGED
+  TRANSFER
+}
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+enum PaymentMethod {
+  CASH
+  UPI
+  DEBIT_CARD
+  CREDIT_CARD
+  BANK_TRANSFER
+}
+enum PaymentStatus {
+  PENDING
+  PAID
+  PARTIALLY_PAID
+  REFUNDED
+}
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+enum AlertStatus {
+  ACTIVE
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(STAFF)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  sessions     Session[]
+  movements    StockMovement[]
+  orders       Order[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  color       String   @default("#5271ff")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  products    Product[]
+}
+
+model Supplier {
+  id             String         @id @default(cuid())
+  name           String
+  contactPerson  String?
+  phone          String?
+  email          String?
+  addressLine    String?
+  area           String?
+  city           String?
+  state          String?
+  pinCode        String?
+  country        String         @default("India")
+  gstin          String?
+  leadTimeDays   Int            @default(5)
+  status         SupplierStatus @default(ACTIVE)
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  products       Product[]
+  @@index([name])
+}
+
+model Product {
+  id              String        @id @default(cuid())
+  sku             String        @unique
+  barcode         String?       @unique
+  name            String
+  description     String?
+  categoryId      String
+  supplierId      String
+  costPrice       Decimal       @db.Decimal(12, 2)
+  sellingPrice    Decimal       @db.Decimal(12, 2)
+  gstPercentage   Decimal       @default(0) @db.Decimal(5, 2)
+  hsnCode         String?
+  minStock        Int           @default(10)
+  reorderPoint    Int           @default(20)
+  reorderQuantity Int           @default(50)
+  unit            String        @default("pcs")
+  status          ProductStatus @default(ACTIVE)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  category        Category      @relation(fields: [categoryId], references: [id])
+  supplier        Supplier      @relation(fields: [supplierId], references: [id])
+  inventory       Inventory?
+  movements       StockMovement[]
+  orderItems      OrderItem[]
+  sales           Sale[]
+  alerts          Alert[]
+  forecasts       Forecast[]
+  @@index([categoryId])
+  @@index([supplierId])
+  @@index([status, name])
+}
+
+model Inventory {
+  id            String   @id @default(cuid())
+  productId     String   @unique
+  currentStock  Int      @default(0)
+  reservedStock Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model StockMovement {
+  id            String       @id @default(cuid())
+  productId     String
+  userId        String?
+  type          MovementType
+  quantity      Int
+  previousStock Int
+  newStock      Int
+  reference     String?
+  notes         String?
+  createdAt     DateTime     @default(now())
+  product       Product      @relation(fields: [productId], references: [id])
+  user          User?        @relation(fields: [userId], references: [id])
+  @@index([productId, createdAt])
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model Customer {
+  id          String   @id @default(cuid())
+  name        String
+  phone       String?
+  email       String?
+  addressLine String?
+  area        String?
+  city        String?
+  state       String?
+  pinCode     String?
+  country     String   @default("India")
+  gstin       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  orders      Order[]
+  @@index([name])
+}
+
+model Order {
+  id              String        @id @default(cuid())
+  orderNumber     String        @unique
+  customerId      String
+  userId          String?
+  status          OrderStatus   @default(PENDING)
+  paymentMethod   PaymentMethod @default(CASH)
+  paymentStatus   PaymentStatus @default(PENDING)
+  subtotal        Decimal       @db.Decimal(14, 2)
+  discount        Decimal       @default(0) @db.Decimal(14, 2)
+  taxableAmount   Decimal       @db.Decimal(14, 2)
+  cgst            Decimal       @default(0) @db.Decimal(14, 2)
+  sgst            Decimal       @default(0) @db.Decimal(14, 2)
+  igst            Decimal       @default(0) @db.Decimal(14, 2)
+  totalTax        Decimal       @db.Decimal(14, 2)
+  total           Decimal       @db.Decimal(14, 2)
+  stockDeducted   Boolean       @default(false)
+  isBill          Boolean       @default(false)
+  checkoutKey     String?       @unique
+  checkoutFingerprint String?
+  amountReceived  Decimal?      @db.Decimal(14, 2)
+  change          Decimal?      @db.Decimal(14, 2)
+  storeSnapshot   Json?
+  customerSnapshot Json?
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  customer        Customer      @relation(fields: [customerId], references: [id])
+  user            User?         @relation(fields: [userId], references: [id])
+  items           OrderItem[]
+  sales           Sale[]
+  @@index([customerId])
+  @@index([status, createdAt])
+  @@index([createdAt])
+  @@index([userId])
+  @@index([isBill, createdAt])
+}
+
+model OrderItem {
+  id            String   @id @default(cuid())
+  orderId       String
+  productId     String
+  quantity      Int
+  unitPrice     Decimal  @db.Decimal(12, 2)
+  gstPercentage Decimal  @db.Decimal(5, 2)
+  discount      Decimal  @default(0) @db.Decimal(14, 2)
+  productName   String?
+  sku           String?
+  hsnCode       String?
+  unit          String?
+  taxableAmount Decimal  @db.Decimal(14, 2)
+  taxAmount     Decimal  @db.Decimal(14, 2)
+  total         Decimal  @db.Decimal(14, 2)
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product       Product  @relation(fields: [productId], references: [id])
+  @@unique([orderId, productId])
+  @@index([productId])
+}
+
+model Sale {
+  id            String   @id @default(cuid())
+  productId     String
+  orderId       String?
+  quantity      Int
+  sellingPrice  Decimal  @db.Decimal(12, 2)
+  gstPercentage Decimal  @default(0) @db.Decimal(5, 2)
+  taxableAmount Decimal  @default(0) @db.Decimal(14, 2)
+  taxAmount     Decimal  @default(0) @db.Decimal(14, 2)
+  revenue       Decimal  @db.Decimal(14, 2)
+  date          DateTime @default(now())
+  voidedAt      DateTime?
+  createdAt     DateTime @default(now())
+  product       Product  @relation(fields: [productId], references: [id])
+  order         Order?   @relation(fields: [orderId], references: [id])
+  @@unique([orderId, productId])
+  @@index([productId, date])
+  @@index([date, voidedAt])
+}
+
+model Alert {
+  id             String        @id @default(cuid())
+  productId      String
+  currentStock   Int
+  reorderPoint   Int
+  forecastDemand Float?
+  severity       AlertSeverity
+  status         AlertStatus   @default(ACTIVE)
+  message        String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  product        Product       @relation(fields: [productId], references: [id])
+  @@index([status, severity])
+  @@index([productId, status])
+}
+
+model Forecast {
+  id                         String   @id @default(cuid())
+  productId                  String
+  periodDays                 Int
+  algorithm                  String
+  confidence                 String
+  expectedDemand             Float
+  averageDailyDemand         Float
+  peakDemand                 Float
+  safetyStock                Float
+  expectedShortage           Float
+  expectedSurplus            Float
+  recommendedReorderQuantity Int
+  estimatedDaysUntilStockout Float?
+  createdAt                  DateTime @default(now())
+  product                    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  points                     ForecastPoint[]
+  @@index([productId, createdAt])
+}
+
+model ForecastPoint {
+  id           String   @id @default(cuid())
+  forecastId   String
+  date         DateTime
+  demand       Float
+  lowerBound   Float
+  upperBound   Float
+  forecast     Forecast @relation(fields: [forecastId], references: [id], onDelete: Cascade)
+  @@unique([forecastId, date])
+}
+
+model StoreSettings {
+  id                     String   @id @default("default")
+  storeName              String   @default("Sri Lakshmi Supermarket")
+  gstin                  String?
+  addressLine            String?
+  area                   String?
+  city                   String   @default("Chennai")
+  state                  String   @default("Tamil Nadu")
+  pinCode                String?
+  country                String   @default("India")
+  phone                  String?
+  currency               String   @default("INR")
+  defaultReorderLevel    Int      @default(20)
+  safetyStockDays        Int      @default(7)
+  defaultForecastPeriod Int      @default(30)
+  historicalDataDays     Int      @default(730)
+  gstRates               Json     @default("[0,5,12,18,28]")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
